@@ -56,7 +56,8 @@ async def startup_event():
 async def root():
     """Basic health check endpoint"""
     return {
-        "message": "Backend is running"
+        "message": "Backend is running",
+        "status": "healthy"
     }
 
 @app.get("/status")
