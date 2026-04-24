@@ -75,7 +75,7 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
         
         # Check if model is ready
         if not os.path.exists("weights/model1.pth"):
-            raise HTTPException(status_code=503, detail="Model 1 not loaded yet")
+            raise HTTPException(status_code=503, detail="Model 1 not available. Please upload model1.pth to the weights/ directory.")
         
         # Read and preprocess image
         file_bytes = await file.read()
@@ -138,7 +138,7 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         
         # Check if model is ready
         if not os.path.exists("weights/model2.pth"):
-            raise HTTPException(status_code=503, detail="Model 2 not loaded yet")
+            raise HTTPException(status_code=503, detail="Model 2 not available. Please upload model2.pth to the weights/ directory.")
         
         # Read and preprocess image
         file_bytes = await file.read()
