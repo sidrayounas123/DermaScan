@@ -15,25 +15,33 @@ app = FastAPI(title="Skin Disease Detection API", version="1.0.0")
 
 # Pydantic models for auth requests
 class RegisterRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, extra='allow')
+    model_config = ConfigDict(extra='allow')
     
-    # Primary field with aliases
-    name: str = Field(min_length=1, description="User full name")
+    # Make all name fields optional to avoid attribute errors
+    name: str | None = None
+    full_name: str | None = None
+    fullName: str | None = None
     email: EmailStr = Field(description="Valid email address")
     password: str = Field(min_length=6, description="Password must be at least 6 characters")
     
-    def __init__(self, **data):
-        # Handle different name field formats before validation
-        if 'full_name' in data:
-            data['name'] = data.pop('full_name')
-        elif 'fullName' in data:
-            data['name'] = data.pop('fullName')
-        
-        super().__init__(**data)
-    
     def get_normalized_name(self) -> str:
         """Get the normalized name value safely"""
-        return self.name
+        if self.full_name:
+            return self.full_name
+        elif self.fullName:
+            return self.fullName
+        elif self.name:
+            return self.name
+        else:
+            raise ValueError("Name field is required (name, full_name, or fullName)")
+    
+    @model_validator(mode='after')
+    def validate_name_field(self) -> 'RegisterRequest':
+        """Ensure at least one name field is provided"""
+        normalized_name = self.get_normalized_name()
+        # Store normalized name in the primary 'name' field
+        self.name = normalized_name
+        return self
 
 class LoginRequest(BaseModel):
     email: str
