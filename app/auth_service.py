@@ -98,3 +98,21 @@ def get_user_profile(uid):
             
     except Exception as e:
         raise Exception(f"Failed to get user profile: {str(e)}")
+
+def get_user_by_email(email):
+    """
+    Check if user exists by email in Firebase Auth
+    Returns True if user exists, False otherwise
+    """
+    if not FIREBASE_AVAILABLE:
+        return False
+    
+    try:
+        # Try to get user by email using Firebase Auth
+        user = auth.get_user_by_email(email)
+        return True
+    except auth.UserNotFoundError:
+        return False
+    except Exception as e:
+        print(f"Error checking user existence: {str(e)}")
+        return False

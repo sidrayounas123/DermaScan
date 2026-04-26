@@ -1,7 +1,9 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
 import os
+import re
+from typing import Any
 from app.model1 import load_model1, predict1, CLASS_NAMES_1
 from app.model2 import load_model2, predict2, CLASS_NAMES_2
 from app.utils import preprocess_image
@@ -13,9 +15,33 @@ app = FastAPI(title="Skin Disease Detection API", version="1.0.0")
 
 # Pydantic models for auth requests
 class RegisterRequest(BaseModel):
-    name: str
-    email: str
-    password: str
+    model_config = ConfigDict(populate_by_name=True)
+    
+    name: str = Field(min_length=1, description="User full name")
+    email: EmailStr = Field(description="Valid email address")
+    password: str = Field(min_length=6, description="Password must be at least 6 characters")
+    
+    @classmethod
+    def alias_generator(cls, field_name: str) -> str | None:
+        if field_name == "name":
+            return "full_name"  # Default alias
+        return None
+    
+    @model_validator(mode='before')
+    @classmethod
+    def extract_name_from_multiple_formats(cls, data: dict | Any) -> dict | Any:
+        if isinstance(data, dict):
+            # Handle different name field formats
+            if 'full_name' in data and data['full_name']:
+                data['name'] = data.pop('full_name')
+            elif 'fullName' in data and data['fullName']:
+                data['name'] = data.pop('fullName')
+            elif 'name' in data and data['name']:
+                # Keep name as is
+                pass
+            else:
+                raise ValueError("Name field is required (full_name, fullName, or name)")
+        return data
 
 class LoginRequest(BaseModel):
     email: str
@@ -216,13 +242,48 @@ async def get_user_scans(user_id: str):
 async def register_user(request: RegisterRequest):
     """Register a new user"""
     try:
-        uid = auth_service.register_user(request.name, request.email, request.password)
+        # Print incoming request body
+        print(f"Registration request received: {request.model_dump()}")
+        
+        # Check if user already exists
+        existing_users = auth_service.get_user_by_email(request.email)
+        if existing_users:
+            print(f"User already exists with email: {request.email}")
+            raise HTTPException(
+                status_code=409, 
+                detail={"success": False, "message": "User already exists"}
+            )
+        
+        # Register user with Firebase
+        print(f"Creating new user: {request.full_name}, {request.email}")
+        result = auth_service.register_user(request.full_name, request.email, request.password)
+        
+        if "error" in result:
+            print(f"Registration failed: {result['error']}")
+            raise HTTPException(
+                status_code=400, 
+                detail={"success": False, "message": result["error"]}
+            )
+        
+        print(f"User created successfully: {result.get('uid')}")
+        
         return {
-            "message": "User created successfully",
-            "uid": uid
+            "success": True,
+            "message": "Account created successfully",
+            "user": {
+                "full_name": request.full_name,
+                "email": request.email
+            }
         }
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Registration error: {str(e)}")
+        raise HTTPException(
+            status_code=400, 
+            detail={"success": False, "message": f"Registration failed: {str(e)}"}
+        )
 
 @app.post("/auth/login")
 async def login_user(request: LoginRequest):
