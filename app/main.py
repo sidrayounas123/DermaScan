@@ -102,6 +102,11 @@ async def status():
 async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(None)):
     """Predict skin disease using Model 1 (Dataset 1)"""
     try:
+        import time
+        start_time = time.time()
+        
+        print(f"Dataset1 - Request received for file: {file.filename}")
+        
         # Debug logging
         filename = file.filename.lower().strip() if file.filename else ''
         print(f"Dataset1 - filename: {filename}")
@@ -120,19 +125,21 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
             raise HTTPException(status_code=400, detail="No filename provided. Only images (jpg, jpeg, png) are allowed.")
         
         print("Dataset1 - File validation passed - proceeding with prediction")
+        print("Dataset1 - Prediction started")
         
-        # Check if model is ready
-        current_dir = os.getcwd()
-        model1_path = os.path.join(current_dir, "weights", "model1.pth")
-        if not os.path.exists(model1_path):
-            raise HTTPException(status_code=503, detail=f"Model 1 not available at {model1_path}. Please upload model1.pth to the weights/ directory.")
+        # Check if model is ready (models loaded globally at startup)
+        from app.model1 import _model1
+        if _model1 is None:
+            raise HTTPException(status_code=503, detail="Model 1 not loaded. Please restart the application.")
         
-        # Read and preprocess image
+        # Read and preprocess image (optimized to 224x224)
         file_bytes = await file.read()
         image_tensor = preprocess_image(file_bytes)
         
-        # Make prediction
+        # Make prediction (model already loaded)
         result = predict1(image_tensor)
+        
+        print("Dataset1 - Prediction finished")
         
         if "error" in result:
             raise HTTPException(status_code=500, detail=result["error"])
@@ -150,12 +157,16 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
             "see_doctor": True
         })
         
-        # Save to Firebase if user_id is provided
+        # Save to Firebase if user_id is provided (async operation)
         if user_id:
             firebase_service.save_scan(user_id, class_name, round(confidence * 100, 2), 
                                      info["severity"], info["see_doctor"], "dataset1")
         
-        # Format response
+        # Calculate total processing time
+        processing_time = round((time.time() - start_time) * 1000, 2)
+        print(f"Dataset1 - Response sent in {processing_time}ms")
+        
+        # Format response (immediate return)
         return {
             "model": "dataset1",
             "predicted_disease": class_name,
@@ -166,7 +177,8 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
             "precautions": info["precautions"],
             "initial_treatment": info["initial_treatment"],
             "see_doctor": info["see_doctor"],
-            "all_probabilities": {cls: round(prob * 100, 2) for cls, prob in all_probs}
+            "all_probabilities": {cls: round(prob * 100, 2) for cls, prob in all_probs},
+            "processing_time_ms": processing_time
         }
         
     except HTTPException:
@@ -178,6 +190,11 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
 async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(None)):
     """Predict skin disease using Model 2 (Dataset 2)"""
     try:
+        import time
+        start_time = time.time()
+        
+        print(f"Dataset2 - Request received for file: {file.filename}")
+        
         # Debug logging
         filename = file.filename.lower().strip() if file.filename else ''
         print(f"Dataset2 - filename: {filename}")
@@ -196,23 +213,25 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
             raise HTTPException(status_code=400, detail="No filename provided. Only images (jpg, jpeg, png) are allowed.")
         
         print("Dataset2 - File validation passed - proceeding with prediction")
+        print("Dataset2 - Prediction started")
         
         # Check if classes are configured
         if len(CLASS_NAMES_2) == 0:
             raise HTTPException(status_code=503, detail="Model 2 classes not configured yet. Update CLASS_NAMES_2 in model2.py")
         
-        # Check if model is ready
-        current_dir = os.getcwd()
-        model2_path = os.path.join(current_dir, "weights", "model2.pth")
-        if not os.path.exists(model2_path):
-            raise HTTPException(status_code=503, detail=f"Model 2 not available at {model2_path}. Please upload model2.pth to the weights/ directory.")
+        # Check if model is ready (models loaded globally at startup)
+        from app.model2 import _model2
+        if _model2 is None:
+            raise HTTPException(status_code=503, detail="Model 2 not loaded. Please restart the application.")
         
-        # Read and preprocess image
+        # Read and preprocess image (optimized to 224x224)
         file_bytes = await file.read()
         image_tensor = preprocess_image(file_bytes)
         
-        # Make prediction
+        # Make prediction (model already loaded)
         result = predict2(image_tensor)
+        
+        print("Dataset2 - Prediction finished")
         
         if "error" in result:
             raise HTTPException(status_code=500, detail=result["error"])
@@ -230,12 +249,16 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
             "see_doctor": True
         })
         
-        # Save to Firebase if user_id is provided
+        # Save to Firebase if user_id is provided (async operation)
         if user_id:
             firebase_service.save_scan(user_id, class_name, round(confidence * 100, 2), 
                                      info["severity"], info["see_doctor"], "dataset2")
         
-        # Format response
+        # Calculate total processing time
+        processing_time = round((time.time() - start_time) * 1000, 2)
+        print(f"Dataset2 - Response sent in {processing_time}ms")
+        
+        # Format response (immediate return)
         return {
             "model": "dataset2",
             "predicted_disease": class_name,
@@ -246,7 +269,8 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
             "precautions": info["precautions"],
             "initial_treatment": info["initial_treatment"],
             "see_doctor": info["see_doctor"],
-            "all_probabilities": {cls: round(prob * 100, 2) for cls, prob in all_probs}
+            "all_probabilities": {cls: round(prob * 100, 2) for cls, prob in all_probs},
+            "processing_time_ms": processing_time
         }
         
     except HTTPException:
