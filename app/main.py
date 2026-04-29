@@ -1,6 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
+from contextlib import asynccontextmanager
 import os
 import re
 from typing import Any
@@ -11,7 +12,24 @@ from app.disease_info import DISEASE_INFO
 from app import firebase_service
 from app import auth_service
 
-app = FastAPI(title="Skin Disease Detection API", version="1.0.0")
+# Load models on startup using modern FastAPI approach
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    print("Loading models on startup...")
+    load_model1()
+    load_model2()
+    print("Models loaded successfully")
+    yield
+    # Shutdown (if needed)
+    print("Application shutting down...")
+
+# Create FastAPI app with lifespan
+app = FastAPI(
+    title="Skin Disease Detection API", 
+    version="1.0.0",
+    lifespan=lifespan
+)
 
 # Pydantic models for auth requests
 class RegisterRequest(BaseModel):
@@ -56,11 +74,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load models on startup
-@app.on_event("startup")
-async def startup_event():
-    load_model1()
-    load_model2()
 
 @app.get("/")
 async def root():
