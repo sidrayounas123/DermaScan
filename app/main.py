@@ -146,21 +146,9 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
         # Debug logging
         filename = file.filename.lower().strip() if file.filename else ''
         print(f"Dataset1 - filename: {filename}")
-        print(f"Dataset1 - content_type: {file.content_type}")
         
-        # Validate using filename extension only
-        allowed_extensions = {'.jpg', '.jpeg', '.png'}
-        
-        # Check file extension (case-insensitive)
-        if filename:
-            file_extension = '.' + filename.split('.')[-1] if '.' in filename else ''
-            if file_extension not in allowed_extensions:
-                print(f"Dataset1 - Invalid file extension: {file_extension}")
-                raise HTTPException(status_code=400, detail="Invalid file type. Only images (jpg, jpeg, png) are allowed.")
-        else:
-            raise HTTPException(status_code=400, detail="No filename provided. Only images (jpg, jpeg, png) are allowed.")
-        
-        print("Dataset1 - File validation passed - proceeding with prediction")
+        # Accept any image format - no content_type validation
+        print("Dataset1 - Accepting any image format")
         print("Dataset1 - Prediction started")
         
         # Check if model is ready (models loaded globally at startup)
@@ -229,6 +217,12 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
         # STEP D: Preprocess and run disease model prediction first
         try:
             image_tensor = preprocess_image(file_bytes)
+        except ValueError as e:
+            print(f"Dataset1 - Image processing error: {str(e)}")
+            return {
+                "success": False,
+                "message": "Cannot decode image file. Please upload a valid image."
+            }
         except Exception as e:
             print(f"Dataset1 - Error preprocessing image: {str(e)}")
             return {
@@ -327,21 +321,9 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         # Debug logging
         filename = file.filename.lower().strip() if file.filename else ''
         print(f"Dataset2 - filename: {filename}")
-        print(f"Dataset2 - content_type: {file.content_type}")
         
-        # Validate using filename extension only
-        allowed_extensions = {'.jpg', '.jpeg', '.png'}
-        
-        # Check file extension (case-insensitive)
-        if filename:
-            file_extension = '.' + filename.split('.')[-1] if '.' in filename else ''
-            if file_extension not in allowed_extensions:
-                print(f"Dataset2 - Invalid file extension: {file_extension}")
-                raise HTTPException(status_code=400, detail="Invalid file type. Only images (jpg, jpeg, png) are allowed.")
-        else:
-            raise HTTPException(status_code=400, detail="No filename provided. Only images (jpg, jpeg, png) are allowed.")
-        
-        print("Dataset2 - File validation passed - proceeding with prediction")
+        # Accept any image format - no content_type validation
+        print("Dataset2 - Accepting any image format")
         print("Dataset2 - Prediction started")
         
         # Check if classes are configured
@@ -414,6 +396,12 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         # STEP D: Preprocess and run disease model prediction first
         try:
             image_tensor = preprocess_image(file_bytes)
+        except ValueError as e:
+            print(f"Dataset2 - Image processing error: {str(e)}")
+            return {
+                "success": False,
+                "message": "Cannot decode image file. Please upload a valid image."
+            }
         except Exception as e:
             print(f"Dataset2 - Error preprocessing image: {str(e)}")
             return {

@@ -22,36 +22,14 @@ def preprocess_image(file_bytes: bytes):
         Preprocessed tensor ready for model input
     """
     try:
-        # Convert bytes to PIL Image
+        # Try multiple methods to open image
         image = Image.open(io.BytesIO(file_bytes))
         
-        # Log original image properties for bias detection
-        print(f"Original image: mode={image.mode}, size={image.size}")
-        
-        # Convert to RGB if not already
+        # Convert to RGB (handles PNG with alpha, grayscale, etc)
         if image.mode != 'RGB':
-            print(f"Converting image from {image.mode} to RGB")
             image = image.convert('RGB')
-        
-        # Check for potential bias-inducing characteristics
-        width, height = image.size
-        aspect_ratio = width / height
-        
-        # Log preprocessing steps for bias analysis
-        print(f"Image properties: size={width}x{height}, aspect_ratio={aspect_ratio:.2f}")
-        
-        # Apply preprocessing transform
-        tensor = preprocess(image)
-        
-        # Log tensor statistics for bias detection
-        print(f"Tensor stats: mean={tensor.mean():.4f}, std={tensor.std():.4f}, min={tensor.min():.4f}, max={tensor.max():.4f}")
-        
-        # Add batch dimension
-        tensor = tensor.unsqueeze(0)
-        
-        print("Preprocessing completed successfully")
+            
+        tensor = preprocess(image).unsqueeze(0)
         return tensor
-        
     except Exception as e:
-        print(f"Preprocessing error: {str(e)}")
-        raise ValueError(f"Error preprocessing image: {e}")
+        raise ValueError(f"Image processing failed: {str(e)}")
