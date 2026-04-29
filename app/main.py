@@ -214,7 +214,7 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
         # STEP E: Get top predicted class confidence and debug logging
         print(f"Dataset1 - DEBUG LOGS:")
         print(f"  Filename: {file.filename}")
-        print(f"  Image size: {width}x{height}")
+        print(f"  Image size: {Image.open(io.BytesIO(file_bytes)).size}")
         print(f"  Preprocessed shape: {image_tensor.shape}")
         
         # Log top 3 class probabilities
@@ -399,7 +399,7 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         # STEP E: Get top predicted class confidence and debug logging
         print(f"Dataset2 - DEBUG LOGS:")
         print(f"  Filename: {file.filename}")
-        print(f"  Image size: {width}x{height}")
+        print(f"  Image size: {Image.open(io.BytesIO(file_bytes)).size}")
         print(f"  Preprocessed shape: {image_tensor.shape}")
         
         # Log top 3 class probabilities
