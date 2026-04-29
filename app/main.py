@@ -10,7 +10,6 @@ from app.utils import preprocess_image
 from app.disease_info import DISEASE_INFO
 from app import firebase_service
 from app import auth_service
-from app.skin_detector import is_skin_image, preprocess_for_skin_detection
 
 app = FastAPI(title="Skin Disease Detection API", version="1.0.0")
 
@@ -136,22 +135,72 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
         
         # Read and preprocess image (optimized to 224x224)
         file_bytes = await file.read()
-        image_tensor = preprocess_image(file_bytes)
         
-        # First-stage: Skin vs Non-skin image detection
-        print("Dataset1 - Performing skin detection...")
-        is_skin, skin_confidence = is_skin_image(image_tensor, threshold=0.6)
+        # STEP A: File validation already done above
         
-        if not is_skin:
-            print(f"Dataset1 - Non-skin image detected (confidence: {skin_confidence:.3f})")
+        # STEP B: Read image safely and perform basic quality checks
+        try:
+            # Load image for quality checks
+            from PIL import Image
+            test_image = Image.open(io.BytesIO(file_bytes))
+            width, height = test_image.size
+            
+            print(f"Dataset1 - Image loaded: {file.filename}, size: {width}x{height}")
+            
+            # STEP C: Basic image quality checks only
+            # Reject only if obviously corrupted or unusable
+            if width < 100 or height < 100:
+                print(f"Dataset1 - Image too small: {width}x{height}")
+                return {
+                    "success": False,
+                    "message": "Image too small. Please upload a larger image (minimum 100x100 pixels)."
+                }
+            
+            # Check for fully black or white images
+            import numpy as np
+            img_array = np.array(test_image)
+            if img_array.size == 0:
+                print("Dataset1 - Empty image array")
+                return {
+                    "success": False,
+                    "message": "Invalid image format. Please upload a valid image file."
+                }
+            
+            # Check if image is fully black
+            if np.all(img_array == 0):
+                print("Dataset1 - Fully black image")
+                return {
+                    "success": False,
+                    "message": "Image appears to be completely black. Please upload a visible image."
+                }
+            
+            # Check if image is fully white (or very close to white)
+            if np.all(img_array >= 250):
+                print("Dataset1 - Fully white image")
+                return {
+                    "success": False,
+                    "message": "Image appears to be completely white. Please upload a visible image."
+                }
+            
+            test_image.close()
+            
+        except Exception as e:
+            print(f"Dataset1 - Error reading image: {str(e)}")
             return {
                 "success": False,
-                "message": "Non-skin image detected. Please upload a clear skin disease image."
+                "message": "Cannot decode image file. Please upload a valid image."
             }
         
-        print(f"Dataset1 - Skin image confirmed (confidence: {skin_confidence:.3f})")
+        # STEP D: Preprocess and run disease model prediction first
+        try:
+            image_tensor = preprocess_image(file_bytes)
+        except Exception as e:
+            print(f"Dataset1 - Error preprocessing image: {str(e)}")
+            return {
+                "success": False,
+                "message": "Image preprocessing failed. Please try a different image."
+            }
         
-        # Second-stage: Disease classification
         print("Dataset1 - Performing disease classification...")
         result = predict1(image_tensor)
         
@@ -162,10 +211,10 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
         
         class_name, confidence, all_probs = result
         
-        # Debug logging for prediction details
+        # STEP E: Get top predicted class confidence and debug logging
         print(f"Dataset1 - DEBUG LOGS:")
         print(f"  Filename: {file.filename}")
-        print(f"  Image size: {Image.open(io.BytesIO(file_bytes)).size}")
+        print(f"  Image size: {width}x{height}")
         print(f"  Preprocessed shape: {image_tensor.shape}")
         
         # Log top 3 class probabilities
@@ -178,55 +227,22 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
             print(f"    {i+1}. {class_name_top}: {prob_percent:.2f}% (index: {idx})")
         
         print(f"  Final predicted class: {class_name}")
-        print(f"  Confidence: {confidence:.2f}%")
+        print(f"  Top confidence: {confidence:.2f}%")
         
         prediction_time = round((time.time() - start_time) * 1000, 2)
         print(f"  Response time: {prediction_time}ms")
         
-        # Validate confidence threshold and image relevance
-        MIN_CONFIDENCE = 70.0  # Minimum 70% confidence required
+        # STEP F: Relevance logic - confidence-based rejection only
+        MIN_CONFIDENCE = 35.0  # Minimum 35% confidence required
         
         if confidence < MIN_CONFIDENCE:
-            print(f"Dataset1 - Low confidence ({confidence}%) - prediction uncertain")
+            print(f"Dataset1 - Low confidence ({confidence:.2f}%) - rejecting as irrelevant image")
             return {
                 "success": False,
-                "message": "Prediction uncertain. Please upload clearer skin image."
+                "message": "Irrelevant image detected. Please upload a clear skin disease image."
             }
         
-        # Basic image content analysis (simple heuristic)
-        try:
-            # Read image for basic analysis
-            from PIL import Image
-            image = Image.open(io.BytesIO(file_bytes))
-            
-            # Check if image is likely skin-related
-            # This is a basic heuristic - can be enhanced with proper ML models
-            is_likely_skin = True  # Default to True for now
-            
-            # Simple checks for obviously non-skin content
-            # (This can be expanded with more sophisticated analysis)
-            if image.mode not in ['RGB', 'RGBA']:
-                is_likely_skin = False
-                print(f"Dataset1 - Non-RGB image mode: {image.mode}")
-            
-            # Size check - very small or very large images might be irrelevant
-            width, height = image.size
-            if width < 100 or height < 100 or width > 2000 or height > 2000:
-                is_likely_skin = False
-                print(f"Dataset1 - Suspicious image size: {width}x{height}")
-            
-            image.close()
-            
-            if not is_likely_skin:
-                print(f"Dataset1 - Image appears to be non-skin related")
-                return {
-                    "success": False,
-                    "message": "Irrelevant image. Please upload a clear skin disease image."
-                }
-                
-        except Exception as e:
-            print(f"Dataset1 - Error during image analysis: {str(e)}")
-            # Continue with prediction even if analysis fails
+        print(f"Dataset1 - Confidence acceptable ({confidence:.2f}%) - proceeding with result")
         
         # Get disease information
         disease_key = class_name
@@ -304,22 +320,72 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         
         # Read and preprocess image (optimized to 224x224)
         file_bytes = await file.read()
-        image_tensor = preprocess_image(file_bytes)
         
-        # First-stage: Skin vs Non-skin image detection
-        print("Dataset2 - Performing skin detection...")
-        is_skin, skin_confidence = is_skin_image(image_tensor, threshold=0.6)
+        # STEP A: File validation already done above
         
-        if not is_skin:
-            print(f"Dataset2 - Non-skin image detected (confidence: {skin_confidence:.3f})")
+        # STEP B: Read image safely and perform basic quality checks
+        try:
+            # Load image for quality checks
+            from PIL import Image
+            test_image = Image.open(io.BytesIO(file_bytes))
+            width, height = test_image.size
+            
+            print(f"Dataset2 - Image loaded: {file.filename}, size: {width}x{height}")
+            
+            # STEP C: Basic image quality checks only
+            # Reject only if obviously corrupted or unusable
+            if width < 100 or height < 100:
+                print(f"Dataset2 - Image too small: {width}x{height}")
+                return {
+                    "success": False,
+                    "message": "Image too small. Please upload a larger image (minimum 100x100 pixels)."
+                }
+            
+            # Check for fully black or white images
+            import numpy as np
+            img_array = np.array(test_image)
+            if img_array.size == 0:
+                print("Dataset2 - Empty image array")
+                return {
+                    "success": False,
+                    "message": "Invalid image format. Please upload a valid image file."
+                }
+            
+            # Check if image is fully black
+            if np.all(img_array == 0):
+                print("Dataset2 - Fully black image")
+                return {
+                    "success": False,
+                    "message": "Image appears to be completely black. Please upload a visible image."
+                }
+            
+            # Check if image is fully white (or very close to white)
+            if np.all(img_array >= 250):
+                print("Dataset2 - Fully white image")
+                return {
+                    "success": False,
+                    "message": "Image appears to be completely white. Please upload a visible image."
+                }
+            
+            test_image.close()
+            
+        except Exception as e:
+            print(f"Dataset2 - Error reading image: {str(e)}")
             return {
                 "success": False,
-                "message": "Non-skin image detected. Please upload a clear skin disease image."
+                "message": "Cannot decode image file. Please upload a valid image."
             }
         
-        print(f"Dataset2 - Skin image confirmed (confidence: {skin_confidence:.3f})")
+        # STEP D: Preprocess and run disease model prediction first
+        try:
+            image_tensor = preprocess_image(file_bytes)
+        except Exception as e:
+            print(f"Dataset2 - Error preprocessing image: {str(e)}")
+            return {
+                "success": False,
+                "message": "Image preprocessing failed. Please try a different image."
+            }
         
-        # Second-stage: Disease classification
         print("Dataset2 - Performing disease classification...")
         result = predict2(image_tensor)
         
@@ -330,10 +396,10 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         
         class_name, confidence, all_probs = result
         
-        # Debug logging for prediction details
+        # STEP E: Get top predicted class confidence and debug logging
         print(f"Dataset2 - DEBUG LOGS:")
         print(f"  Filename: {file.filename}")
-        print(f"  Image size: {Image.open(io.BytesIO(file_bytes)).size}")
+        print(f"  Image size: {width}x{height}")
         print(f"  Preprocessed shape: {image_tensor.shape}")
         
         # Log top 3 class probabilities
@@ -346,55 +412,22 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
             print(f"    {i+1}. {class_name_top}: {prob_percent:.2f}% (index: {idx})")
         
         print(f"  Final predicted class: {class_name}")
-        print(f"  Confidence: {confidence:.2f}%")
+        print(f"  Top confidence: {confidence:.2f}%")
         
         prediction_time = round((time.time() - start_time) * 1000, 2)
         print(f"  Response time: {prediction_time}ms")
         
-        # Validate confidence threshold and image relevance
-        MIN_CONFIDENCE = 70.0  # Minimum 70% confidence required
+        # STEP F: Relevance logic - confidence-based rejection only
+        MIN_CONFIDENCE = 35.0  # Minimum 35% confidence required
         
         if confidence < MIN_CONFIDENCE:
-            print(f"Dataset2 - Low confidence ({confidence}%) - prediction uncertain")
+            print(f"Dataset2 - Low confidence ({confidence:.2f}%) - rejecting as irrelevant image")
             return {
                 "success": False,
-                "message": "Prediction uncertain. Please upload clearer skin image."
+                "message": "Irrelevant image detected. Please upload a clear skin disease image."
             }
         
-        # Basic image content analysis (simple heuristic)
-        try:
-            # Read image for basic analysis
-            from PIL import Image
-            image = Image.open(io.BytesIO(file_bytes))
-            
-            # Check if image is likely skin-related
-            # This is a basic heuristic - can be enhanced with proper ML models
-            is_likely_skin = True  # Default to True for now
-            
-            # Simple checks for obviously non-skin content
-            # (This can be expanded with more sophisticated analysis)
-            if image.mode not in ['RGB', 'RGBA']:
-                is_likely_skin = False
-                print(f"Dataset2 - Non-RGB image mode: {image.mode}")
-            
-            # Size check - very small or very large images might be irrelevant
-            width, height = image.size
-            if width < 100 or height < 100 or width > 2000 or height > 2000:
-                is_likely_skin = False
-                print(f"Dataset2 - Suspicious image size: {width}x{height}")
-            
-            image.close()
-            
-            if not is_likely_skin:
-                print(f"Dataset2 - Image appears to be non-skin related")
-                return {
-                    "success": False,
-                    "message": "Irrelevant image. Please upload a clear skin disease image."
-                }
-                
-        except Exception as e:
-            print(f"Dataset2 - Error during image analysis: {str(e)}")
-            # Continue with prediction even if analysis fails
+        print(f"Dataset2 - Confidence acceptable ({confidence:.2f}%) - proceeding with result")
         
         # Get disease information
         disease_key = class_name
