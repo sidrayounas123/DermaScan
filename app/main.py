@@ -174,7 +174,7 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
         if confidence < MIN_CONFIDENCE:
             print(f"Dataset1 - Low confidence ({confidence}%) - prediction uncertain")
             return {
-                "success": False,
+                "success": false,
                 "message": "Prediction uncertain. Please upload clearer skin image."
             }
         
@@ -205,7 +205,7 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
             if not is_likely_skin:
                 print(f"Dataset1 - Image appears to be non-skin related")
                 return {
-                    "success": False,
+                    "success": false,
                     "message": "Irrelevant image. Please upload a clear skin disease image."
                 }
                 
@@ -233,19 +233,15 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
         processing_time = round((time.time() - start_time) * 1000, 2)
         print(f"Dataset1 - Response sent in {processing_time}ms")
         
-        # Format response (immediate return)
+        # Format standardized response
         return {
-            "model": "dataset1",
+            "success": true,
             "predicted_disease": class_name,
             "confidence_percent": round(confidence * 100, 2),
             "severity": info["severity"],
-            "severity_score": info["severity_score"],
             "description": info["description"],
             "precautions": info["precautions"],
-            "initial_treatment": info["initial_treatment"],
-            "see_doctor": info["see_doctor"],
-            "all_probabilities": {cls: round(prob * 100, 2) for cls, prob in all_probs},
-            "processing_time_ms": processing_time
+            "initial_treatment": info["initial_treatment"]
         }
         
     except HTTPException:
@@ -332,7 +328,7 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         if confidence < MIN_CONFIDENCE:
             print(f"Dataset2 - Low confidence ({confidence}%) - prediction uncertain")
             return {
-                "success": False,
+                "success": false,
                 "message": "Prediction uncertain. Please upload clearer skin image."
             }
         
@@ -363,7 +359,7 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
             if not is_likely_skin:
                 print(f"Dataset2 - Image appears to be non-skin related")
                 return {
-                    "success": False,
+                    "success": false,
                     "message": "Irrelevant image. Please upload a clear skin disease image."
                 }
                 
@@ -391,19 +387,15 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         processing_time = round((time.time() - start_time) * 1000, 2)
         print(f"Dataset2 - Response sent in {processing_time}ms")
         
-        # Format response (immediate return)
+        # Format standardized response
         return {
-            "model": "dataset2",
+            "success": true,
             "predicted_disease": class_name,
             "confidence_percent": round(confidence * 100, 2),
             "severity": info["severity"],
-            "severity_score": info["severity_score"],
             "description": info["description"],
             "precautions": info["precautions"],
-            "initial_treatment": info["initial_treatment"],
-            "see_doctor": info["see_doctor"],
-            "all_probabilities": {cls: round(prob * 100, 2) for cls, prob in all_probs},
-            "processing_time_ms": processing_time
+            "initial_treatment": info["initial_treatment"]
         }
         
     except HTTPException:
