@@ -106,12 +106,8 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
         start_time = time.time()
         
         print(f"Dataset1 - Request received for file: {file.filename}")
-        Audit my skin disease backend model API. Currently every uploaded image gets classified into one disease class even if image is irrelevant (clothes, objects, random backgrounds). Add irrelevant image detection and reject non-skin images with response:
-{
- "success": false,
- "message": "Irrelevant image. Please upload a clear skin disease image."
-}
-Use confidence threshold and image validation.
+       
+
         # Debug logging
         filename = file.filename.lower().strip() if file.filename else ''
         print(f"Dataset1 - filename: {filename}")
@@ -152,13 +148,13 @@ Use confidence threshold and image validation.
         class_name, confidence, all_probs = result
         
         # Validate confidence threshold and image relevance
-        MIN_CONFIDENCE = 30.0  # Minimum 30% confidence required
+        MIN_CONFIDENCE = 70.0  # Minimum 70% confidence required
         
         if confidence < MIN_CONFIDENCE:
-            print(f"Dataset1 - Low confidence ({confidence}%) - rejecting as irrelevant image")
+            print(f"Dataset1 - Low confidence ({confidence}%) - prediction uncertain")
             return {
                 "success": False,
-                "message": "Irrelevant image. Please upload a clear skin disease image with confidence above 30%."
+                "message": "Prediction uncertain. Please upload clearer skin image."
             }
         
         # Basic image content analysis (simple heuristic)
@@ -289,13 +285,13 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         class_name, confidence, all_probs = result
         
         # Validate confidence threshold and image relevance
-        MIN_CONFIDENCE = 30.0  # Minimum 30% confidence required
+        MIN_CONFIDENCE = 70.0  # Minimum 70% confidence required
         
         if confidence < MIN_CONFIDENCE:
-            print(f"Dataset2 - Low confidence ({confidence}%) - rejecting as irrelevant image")
+            print(f"Dataset2 - Low confidence ({confidence}%) - prediction uncertain")
             return {
                 "success": False,
-                "message": "Irrelevant image. Please upload a clear skin disease image with confidence above 30%."
+                "message": "Prediction uncertain. Please upload clearer skin image."
             }
         
         # Basic image content analysis (simple heuristic)
