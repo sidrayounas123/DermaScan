@@ -152,6 +152,4 @@ def predict2(image_tensor):
     except Exception as e:
         return {"error": f"Prediction failed: {str(e)}"}
 
-# Initialize model on module import
-if __name__ != "__main__":
-    load_model2()
+# Model will be loaded during FastAPI startup, not on import
