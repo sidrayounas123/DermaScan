@@ -156,34 +156,38 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
         if _model1 is None:
             raise HTTPException(status_code=503, detail="Model 1 not loaded. Please restart the application.")
         
-        # Read file with proper error handling
+        # Read file with comprehensive debugging
         contents = await file.read()
-        print(f"Received {len(contents)} bytes")
+        print(f"=== DEBUG ===")
+        print(f"File size: {len(contents)} bytes")
+        print(f"Content type: {file.content_type}")
+        print(f"Filename: {file.filename}")
+        print(f"First 10 bytes: {contents[:10]}")
+        
         if len(contents) == 0:
-            raise HTTPException(status_code=400, detail="Empty file received")
+            return {"success": False, "message": "Empty file"}
         
         file_bytes = contents
         
-        # STEP D: Preprocess and run disease model prediction first
-        # Debug file_bytes content
-        print(f"File size: {len(file_bytes)} bytes")
-        print(f"File content type: {file.content_type}")
-        print(f"First 20 bytes: {file_bytes[:20]}")
+        try:
+            from PIL import Image
+            import io
+            img = Image.open(io.BytesIO(contents))
+            print(f"Image format: {img.format}")
+            print(f"Image mode: {img.mode}")
+            print(f"Image size: {img.size}")
+            img = img.convert('RGB')
+            print("Convert to RGB: SUCCESS")
+        except Exception as e:
+            print(f"PIL Error: {str(e)}")
+            return {"success": False, "message": f"PIL Error: {str(e)}"}
         
         try:
-            image_tensor = preprocess_image(file_bytes)
-        except ValueError as e:
-            print(f"Dataset1 - Image processing error: {str(e)}")
-            return {
-                "success": False,
-                "message": "Cannot decode image file. Please upload a valid image."
-            }
+            tensor = preprocess_image(contents)
+            print("Preprocess: SUCCESS")
         except Exception as e:
-            print(f"Dataset1 - Error preprocessing image: {str(e)}")
-            return {
-                "success": False,
-                "message": "Image preprocessing failed. Please try a different image."
-            }
+            print(f"Preprocess Error: {str(e)}")
+            return {"success": False, "message": f"Preprocess Error: {str(e)}"}
         
         print("Dataset1 - Performing disease classification...")
         result = predict1(image_tensor)
