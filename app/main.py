@@ -245,7 +245,6 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         print(f"  Preprocessed shape: {image_tensor.shape}")
         
         # Log top 3 class probabilities
-        from app.model2 import CLASS_NAMES_2
         top_indices = sorted(range(len(all_probs)), key=lambda i: all_probs[i], reverse=True)[:3]
         print(f"  Top 3 probabilities:")
         for i, idx in enumerate(top_indices):
@@ -299,7 +298,11 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
             "severity": info["severity"],
             "description": info["description"],
             "precautions": info["precautions"],
-            "initial_treatment": info["initial_treatment"]
+            "initial_treatment": info["initial_treatment"],
+            "all_probabilities": {
+                CLASS_NAMES_2[i]: round(all_probs[i] * 100, 2)
+                for i in range(len(CLASS_NAMES_2))
+            }
         }
         
     except HTTPException:
