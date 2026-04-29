@@ -134,139 +134,49 @@ async def status():
     }
 
 @app.post("/predict/dataset1")
-async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(None)):
-    """Predict skin disease using Model 1 (Dataset 1)"""
+async def predict_dataset1(file: UploadFile = File(...), user_id: str = None):
+    contents = await file.read()
+    
+    if len(contents) == 0:
+        raise HTTPException(400, "Empty file received")
+    
     try:
-        import time
-        start_time = time.time()
-        
-        print(f"Dataset1 - Request received for file: {file.filename}")
-       
-
-        # Debug logging
-        filename = file.filename.lower().strip() if file.filename else ''
-        print(f"Dataset1 - filename: {filename}")
-        
-        # Accept any image format - no content_type validation
-        print("Dataset1 - Accepting any image format")
-        print("Dataset1 - Prediction started")
-        
-        # Check if model is ready (models loaded globally at startup)
-        from app.model1 import _model1
-        if _model1 is None:
-            raise HTTPException(status_code=503, detail="Model 1 not loaded. Please restart the application.")
-        
-        # Read file with comprehensive debugging
-        contents = await file.read()
-        print(f"=== DEBUG ===")
-        print(f"File size: {len(contents)} bytes")
-        print(f"Content type: {file.content_type}")
-        print(f"Filename: {file.filename}")
-        print(f"First 10 bytes: {contents[:10]}")
-        
-        if len(contents) == 0:
-            return {"success": False, "message": "Empty file"}
-        
-        file_bytes = contents
-        
-        try:
-            from PIL import Image
-            import io
-            img = Image.open(io.BytesIO(contents))
-            print(f"Image format: {img.format}")
-            print(f"Image mode: {img.mode}")
-            print(f"Image size: {img.size}")
-            img = img.convert('RGB')
-            print("Convert to RGB: SUCCESS")
-        except Exception as e:
-            print(f"PIL Error: {str(e)}")
-            return {"success": False, "message": f"PIL Error: {str(e)}"}
-        
-        try:
-            tensor = preprocess_image(contents)
-            print("Preprocess: SUCCESS")
-        except Exception as e:
-            print(f"Preprocess Error: {str(e)}")
-            return {"success": False, "message": f"Preprocess Error: {str(e)}"}
-        
-        print("Dataset1 - Performing disease classification...")
-        result = predict1(image_tensor)
-        
-        print("Dataset1 - Prediction finished")
-        
-        if "error" in result:
-            raise HTTPException(status_code=500, detail=result["error"])
-        
-        class_name, confidence, all_probs = result
-        
-        # STEP E: Get top predicted class confidence and debug logging
-        print(f"Dataset1 - DEBUG LOGS:")
-        print(f"  Filename: {file.filename}")
-        print(f"  Image size: {Image.open(io.BytesIO(file_bytes)).size}")
-        print(f"  Preprocessed shape: {image_tensor.shape}")
-        
-        # Log top 3 class probabilities
-        from app.model1 import CLASS_NAMES_1
-        top_indices = sorted(range(len(all_probs)), key=lambda i: all_probs[i], reverse=True)[:3]
-        print(f"  Top 3 probabilities:")
-        for i, idx in enumerate(top_indices):
-            prob_percent = all_probs[idx] * 100
-            class_name_top = CLASS_NAMES_1[idx] if idx < len(CLASS_NAMES_1) else f"Class_{idx}"
-            print(f"    {i+1}. {class_name_top}: {prob_percent:.2f}% (index: {idx})")
-        
-        print(f"  Final predicted class: {class_name}")
-        print(f"  Top confidence: {confidence:.2f}%")
-        
-        prediction_time = round((time.time() - start_time) * 1000, 2)
-        print(f"  Response time: {prediction_time}ms")
-        
-        # STEP F: Relevance logic - confidence-based rejection only
-        MIN_CONFIDENCE = 35.0  # Minimum 35% confidence required
-        
-        if confidence < MIN_CONFIDENCE:
-            print(f"Dataset1 - Low confidence ({confidence:.2f}%) - rejecting as irrelevant image")
-            return {
-                "success": False,
-                "message": "Irrelevant image detected. Please upload a clear skin disease image."
-            }
-        
-        print(f"Dataset1 - Confidence acceptable ({confidence:.2f}%) - proceeding with result")
-        
-        # Get disease information
-        disease_key = class_name
-        info = DISEASE_INFO.get(disease_key, {
-            "severity": "Unknown",
-            "severity_score": 0,
-            "description": "Please consult a doctor",
-            "precautions": ["Consult a dermatologist"],
-            "initial_treatment": ["See a doctor"],
-            "see_doctor": True
-        })
-        
-        # Save to Firebase if user_id is provided (async operation)
-        if user_id:
-            firebase_service.save_scan(user_id, class_name, round(confidence * 100, 2), 
-                                     info["severity"], info["see_doctor"], "dataset1")
-        
-        # Calculate total processing time
-        processing_time = round((time.time() - start_time) * 1000, 2)
-        print(f"Dataset1 - Response sent in {processing_time}ms")
-        
-        # Format standardized response
-        return {
-            "success": True,
-            "predicted_disease": class_name,
-            "confidence_percent": round(confidence * 100, 2),
-            "severity": info["severity"],
-            "description": info["description"],
-            "precautions": info["precautions"],
-            "initial_treatment": info["initial_treatment"]
-        }
-        
-    except HTTPException:
-        raise
+        image_tensor = preprocess_image(contents)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    
+    try:
+        disease, confidence, all_probs = predict1(image_tensor)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+        raise HTTPException(500, f"Prediction failed: {str(e)}")
+    
+    info = DISEASE_INFO.get(disease, {
+        "severity": "Unknown",
+        "severity_score": 0,
+        "description": "Please consult a doctor",
+        "precautions": ["Consult a dermatologist"],
+        "initial_treatment": ["See a doctor"],
+        "see_doctor": True
+    })
+    
+    if user_id:
+        try:
+            firebase_service.save_scan(
+                user_id, disease, confidence,
+                info["severity"], info["see_doctor"], "dataset1"
+            )
+        except Exception as e:
+            print(f"Firebase save error: {e}")
+    
+    return {
+        "success": True,
+        "predicted_disease": disease,
+        "confidence_percent": round(confidence * 100, 2),
+        "severity": info["severity"],
+        "description": info["description"],
+        "precautions": info["precautions"],
+        "initial_treatment": info["initial_treatment"]
+    }
 
 @app.post("/predict/dataset2")
 async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(None)):
