@@ -147,6 +147,27 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = Query(No
         
         class_name, confidence, all_probs = result
         
+        # Debug logging for prediction details
+        print(f"Dataset1 - DEBUG LOGS:")
+        print(f"  Filename: {file.filename}")
+        print(f"  Image size: {Image.open(io.BytesIO(file_bytes)).size}")
+        print(f"  Preprocessed shape: {image_tensor.shape}")
+        
+        # Log top 3 class probabilities
+        from app.model1 import CLASS_NAMES_1
+        top_indices = sorted(range(len(all_probs)), key=lambda i: all_probs[i], reverse=True)[:3]
+        print(f"  Top 3 probabilities:")
+        for i, idx in enumerate(top_indices):
+            prob_percent = all_probs[idx] * 100
+            class_name_top = CLASS_NAMES_1[idx] if idx < len(CLASS_NAMES_1) else f"Class_{idx}"
+            print(f"    {i+1}. {class_name_top}: {prob_percent:.2f}% (index: {idx})")
+        
+        print(f"  Final predicted class: {class_name}")
+        print(f"  Confidence: {confidence:.2f}%")
+        
+        prediction_time = round((time.time() - start_time) * 1000, 2)
+        print(f"  Response time: {prediction_time}ms")
+        
         # Validate confidence threshold and image relevance
         MIN_CONFIDENCE = 70.0  # Minimum 70% confidence required
         
@@ -283,6 +304,27 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
             raise HTTPException(status_code=500, detail=result["error"])
         
         class_name, confidence, all_probs = result
+        
+        # Debug logging for prediction details
+        print(f"Dataset2 - DEBUG LOGS:")
+        print(f"  Filename: {file.filename}")
+        print(f"  Image size: {Image.open(io.BytesIO(file_bytes)).size}")
+        print(f"  Preprocessed shape: {image_tensor.shape}")
+        
+        # Log top 3 class probabilities
+        from app.model2 import CLASS_NAMES_2
+        top_indices = sorted(range(len(all_probs)), key=lambda i: all_probs[i], reverse=True)[:3]
+        print(f"  Top 3 probabilities:")
+        for i, idx in enumerate(top_indices):
+            prob_percent = all_probs[idx] * 100
+            class_name_top = CLASS_NAMES_2[idx] if idx < len(CLASS_NAMES_2) else f"Class_{idx}"
+            print(f"    {i+1}. {class_name_top}: {prob_percent:.2f}% (index: {idx})")
+        
+        print(f"  Final predicted class: {class_name}")
+        print(f"  Confidence: {confidence:.2f}%")
+        
+        prediction_time = round((time.time() - start_time) * 1000, 2)
+        print(f"  Response time: {prediction_time}ms")
         
         # Validate confidence threshold and image relevance
         MIN_CONFIDENCE = 70.0  # Minimum 70% confidence required
