@@ -200,9 +200,17 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
             raise HTTPException(status_code=503, detail="Model 2 classes not configured yet. Update CLASS_NAMES_2 in model2.py")
         
         # Check if model is ready (models loaded globally at startup)
-        from app.model2 import _model2
+        from app.model2 import _model2, load_model2
         if _model2 is None:
-            raise HTTPException(status_code=503, detail="Model 2 not loaded. Please restart the application.")
+            print("Model 2 not loaded, attempting on-demand loading...")
+            try:
+                load_model2()
+                if _model2 is None:
+                    raise HTTPException(status_code=503, detail="Model 2 failed to load. Please check the weights file and configuration.")
+                print("Model 2 loaded successfully on-demand")
+            except Exception as e:
+                print(f"On-demand Model 2 loading failed: {str(e)}")
+                raise HTTPException(status_code=503, detail=f"Model 2 loading failed: {str(e)}")
         
         # Read file with proper error handling
         contents = await file.read()
