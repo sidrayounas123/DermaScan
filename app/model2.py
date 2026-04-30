@@ -139,8 +139,8 @@ def predict2(image_tensor):
             # Get class name
             class_name = CLASS_NAMES_2[predicted_idx]
             
-            # Create list of all probabilities (class_name, probability) tuples
-            all_probs_list = [(CLASS_NAMES_2[i], float(probs_np[i])) for i in range(len(CLASS_NAMES_2))]
+            # Create list of all probabilities as plain floats
+            all_probs_list = [float(probs_np[i]) for i in range(len(CLASS_NAMES_2))]
             
             return (class_name, confidence_float, all_probs_list)
             
