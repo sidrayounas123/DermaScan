@@ -166,10 +166,10 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = None):
     except Exception as e:
         raise HTTPException(500, f"Prediction failed: {str(e)}")
     
-    confidence_percent = round(confidence * 100, 2)
+    confidence_percent = round(float(confidence) * 100, 2)
     
     # Check if confidence is less than 40% for irrelevant image detection
-    if confidence < 0.4:
+    if float(confidence) < 0.4:
         return {
             "success": False,
             "predicted_disease": "Unknown",
@@ -290,7 +290,7 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
             print(f"    {i+1}. {class_name_top}: {prob_percent:.2f}% (index: {idx})")
         
         print(f"  Final predicted class: {class_name}")
-        print(f"  Top confidence: {confidence:.2f}%")
+        print(f"  Top confidence: {float(confidence):.2f}%")
         
         prediction_time = round((time.time() - start_time) * 1000, 2)
         print(f"  Response time: {prediction_time}ms")
@@ -298,7 +298,7 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         # STEP F: Relevance logic - confidence-based rejection only
         MIN_CONFIDENCE = 40.0  # Minimum 40% confidence required
         
-        confidence_percent = round(confidence * 100, 2)
+        confidence_percent = round(float(confidence) * 100, 2)
         
         if confidence_percent < 40:
             print(f"Dataset2 - Low confidence ({confidence_percent:.2f}%) - rejecting as irrelevant image")
