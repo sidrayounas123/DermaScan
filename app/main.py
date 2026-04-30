@@ -9,8 +9,21 @@ from app.model1 import load_model1, predict1, CLASS_NAMES_1
 from app.model2 import load_model2, predict2, CLASS_NAMES_2
 from app.utils import preprocess_image
 from app.disease_info import DISEASE_INFO
-from app import firebase_service
-from app import auth_service
+
+# Try to import Firebase services, but don't fail if not available
+try:
+    from app import firebase_service
+    FIREBASE_SERVICE_AVAILABLE = True
+except Exception as e:
+    print(f"Firebase service not available: {e}")
+    FIREBASE_SERVICE_AVAILABLE = False
+
+try:
+    from app import auth_service
+    AUTH_SERVICE_AVAILABLE = True
+except Exception as e:
+    print(f"Auth service not available: {e}")
+    AUTH_SERVICE_AVAILABLE = False
 
 # Load models on startup using modern FastAPI approach
 @asynccontextmanager
@@ -171,7 +184,7 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = None):
         "see_doctor": True
     })
     
-    if user_id:
+    if user_id and FIREBASE_SERVICE_AVAILABLE:
         try:
             firebase_service.save_scan(
                 user_id, disease, confidence,
@@ -308,7 +321,7 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         })
         
         # Save to Firebase if user_id is provided (async operation)
-        if user_id:
+        if user_id and FIREBASE_SERVICE_AVAILABLE:
             firebase_service.save_scan(user_id, class_name, round(confidence * 100, 2), 
                                      info["severity"], info["see_doctor"], "dataset2")
         
@@ -340,6 +353,12 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
 @app.get("/scans/{user_id}")
 async def get_user_scans(user_id: str, filter: str = Query(None, description="Filter scans: high_risk, low_risk")):
     """Get detailed scan history for a specific user"""
+    if not FIREBASE_SERVICE_AVAILABLE:
+        raise HTTPException(
+            status_code=503, 
+            detail={"success": False, "message": "Firebase service is not available"}
+        )
+    
     try:
         print(f"Retrieving scans for user: {user_id}, filter: {filter}")
         
@@ -378,6 +397,12 @@ async def get_user_scans(user_id: str, filter: str = Query(None, description="Fi
 @app.post("/auth/register")
 async def register_user(request: RegisterRequest):
     """Register a new user"""
+    if not AUTH_SERVICE_AVAILABLE:
+        raise HTTPException(
+            status_code=503, 
+            detail={"success": False, "message": "Authentication service is not available"}
+        )
+    
     try:
         # Print incoming request body
         print(f"Registration request received: {request.model_dump()}")
@@ -429,6 +454,12 @@ async def register_user(request: RegisterRequest):
 @app.post("/auth/login")
 async def login_user(request: LoginRequest):
     """Login user and return token"""
+    if not AUTH_SERVICE_AVAILABLE:
+        raise HTTPException(
+            status_code=503, 
+            detail={"success": False, "message": "Authentication service is not available"}
+        )
+    
     try:
         result = auth_service.login_user(request.email, request.password)
         # Get user profile data
@@ -444,6 +475,12 @@ async def login_user(request: LoginRequest):
 @app.get("/auth/profile/{uid}")
 async def get_user_profile(uid: str):
     """Get user profile"""
+    if not AUTH_SERVICE_AVAILABLE:
+        raise HTTPException(
+            status_code=503, 
+            detail={"success": False, "message": "Authentication service is not available"}
+        )
+    
     try:
         profile = auth_service.get_user_profile(uid)
         return profile
