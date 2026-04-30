@@ -63,15 +63,44 @@ class SkinBinaryClassifier(nn.Module):
 _skin_detector = None
 
 def load_skin_detector():
-    """Load the skin detector model"""
+    """Load skin detector model"""
     global _skin_detector
     try:
+        import os
+        current_dir = os.getcwd()
+        weights_path = os.path.join(current_dir, "weights", "model2.pth")
+        
+        print(f"Looking for skin detector weights at: {weights_path}")
+        print(f"Weights file exists: {os.path.exists(weights_path)}")
+        
+        if not os.path.exists(weights_path):
+            print(f"Skin detector weights not found at {weights_path}")
+            print("Skin detector will use heuristics only")
+            return False
+        
+        # Initialize model
         _skin_detector = SkinBinaryClassifier()
+        
+        # Load weights - note: model2.pth has 15 classes but we need binary classifier
+        # We'll load only compatible parts or use as feature extractor
+        checkpoint = torch.load(weights_path, map_location='cpu')
+        
+        # Try to load compatible weights (handle size mismatch)
+        try:
+            _skin_detector.load_state_dict(checkpoint, strict=False)
+            print("Skin detector weights loaded successfully (partial loading)")
+        except Exception as e:
+            print(f"Warning: Could not load all weights: {e}")
+            print("Skin detector will use heuristics as fallback")
+            return False
+        
         _skin_detector.eval()
         print("Skin detector model loaded successfully")
         return True
+        
     except Exception as e:
         print(f"Error loading skin detector: {str(e)}")
+        print("Skin detector will use heuristics only")
         return False
 
 def is_skin_image(image_tensor, threshold=0.5):

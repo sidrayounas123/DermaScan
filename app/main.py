@@ -9,6 +9,7 @@ from app.model1 import load_model1, predict1, CLASS_NAMES_1
 from app.model2 import load_model2, predict2, CLASS_NAMES_2
 from app.utils import preprocess_image
 from app.disease_info import DISEASE_INFO
+from app.skin_detector import load_skin_detector, is_skin_image, preprocess_for_skin_detection
 
 # Try to import Firebase services, but don't fail if not available
 try:
@@ -43,6 +44,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Error loading Model 2: {str(e)}")
         print("Model 2 will be loaded on-demand")
+    
+    try:
+        load_skin_detector()
+        print("Skin detector loading completed")
+    except Exception as e:
+        print(f"Error loading skin detector: {str(e)}")
+        print("Skin detector will use heuristics only")
     
     print("FastAPI application startup completed")
     yield
@@ -158,6 +166,23 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = None):
     except ValueError as e:
         raise HTTPException(400, str(e))
     
+    # First check if this is a valid skin image using skin detector
+    try:
+        skin_image_tensor = preprocess_for_skin_detection(contents)
+        is_skin, skin_confidence = is_skin_image(skin_image_tensor, threshold=0.7)
+        
+        if not is_skin:
+            return {
+                "success": False,
+                "predicted_disease": "Unknown",
+                "message": "Image does not appear to be a skin condition. Please upload a clear skin image.",
+                "confidence_percent": round(skin_confidence * 100, 2),
+                "is_valid_skin_image": False
+            }
+    except Exception as e:
+        print(f"Skin detection error: {e}")
+        # Continue with prediction if skin detection fails
+    
     try:
         disease, confidence, all_probs = predict1(image_tensor)
     except Exception as e:
@@ -246,7 +271,24 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         
         file_bytes = contents
         
-        # STEP D: Preprocess and run disease model prediction first
+        # STEP D: First check if this is a valid skin image using skin detector
+        try:
+            skin_image_tensor = preprocess_for_skin_detection(file_bytes)
+            is_skin, skin_confidence = is_skin_image(skin_image_tensor, threshold=0.7)
+            
+            if not is_skin:
+                return {
+                    "success": False,
+                    "predicted_disease": "Unknown",
+                    "message": "Image does not appear to be a skin condition. Please upload a clear skin image.",
+                    "confidence_percent": round(skin_confidence * 100, 2),
+                    "is_valid_skin_image": False
+                }
+        except Exception as e:
+            print(f"Dataset2 - Skin detection error: {str(e)}")
+            # Continue with prediction if skin detection fails
+        
+        # STEP E: Preprocess and run disease model prediction
         try:
             image_tensor = preprocess_image(file_bytes)
         except ValueError as e:
