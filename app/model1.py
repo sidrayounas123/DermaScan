@@ -1,7 +1,14 @@
 import torch
 import torch.nn as nn
-import torchvision.models as models
 import os
+import math
+
+try:
+    import timm
+    TIMM_AVAILABLE = True
+except ImportError:
+    TIMM_AVAILABLE = False
+    print("timm library not available, will try custom ViT")
 
 # Device configuration
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -22,7 +29,7 @@ CLASS_NAMES_1 = [
 _model1 = None
 
 def load_model1():
-    """Load Model 1 (Dataset 1)"""
+    """Load Model 1 (Dataset 1) - Vision Transformer"""
     global _model1
     if _model1 is not None:
         return _model1
@@ -35,23 +42,50 @@ def load_model1():
             print(f"Model 1 weights not found at {weights_path}")
             return None
         
-        # Load a ResNet50 model (common for skin disease classification)
-        model = models.resnet50(pretrained=False)
-        
-        # Modify the final layer for our number of classes
-        num_ftrs = model.fc.in_features
-        model.fc = nn.Linear(num_ftrs, len(CLASS_NAMES_1))
-        
-        # Load weights
+        # Load checkpoint first to inspect architecture
         checkpoint = torch.load(weights_path, map_location=DEVICE)
         
-        # Handle different checkpoint formats
-        if 'model_state_dict' in checkpoint:
-            model.load_state_dict(checkpoint['model_state_dict'])
-        elif 'state_dict' in checkpoint:
-            model.load_state_dict(checkpoint['state_dict'])
+        # Check if it's a timm model with 'model' key or direct state_dict
+        if isinstance(checkpoint, dict) and 'model' in checkpoint:
+            state_dict = checkpoint['model']
+        elif isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
+            state_dict = checkpoint['state_dict']
+        elif isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+            state_dict = checkpoint['model_state_dict']
         else:
-            model.load_state_dict(checkpoint)
+            state_dict = checkpoint
+        
+        # Inspect keys to determine architecture
+        first_key = list(state_dict.keys())[0] if state_dict else ""
+        
+        if 'backbone' in first_key or 'patch_embed' in first_key:
+            # This is a Vision Transformer
+            print("Detected Vision Transformer architecture")
+            
+            if TIMM_AVAILABLE:
+                # Try to load using timm
+                model = timm.create_model('vit_base_patch16_224', pretrained=False, num_classes=len(CLASS_NAMES_1))
+            else:
+                # Create a simple ViT-like model structure
+                model = nn.Module()
+                model.backbone = nn.Module()
+                model.backbone.patch_embed = nn.Module()
+                model.backbone.patch_embed.proj = nn.Conv2d(3, 768, kernel_size=16, stride=16)
+                model.backbone.cls_token = nn.Parameter(torch.zeros(1, 1, 768))
+                model.backbone.pos_embed = nn.Parameter(torch.zeros(1, 197, 768))
+                model.backbone.blocks = nn.ModuleList([nn.TransformerEncoderLayer(d_model=768, nhead=12) for _ in range(12)])
+                model.backbone.norm = nn.LayerNorm(768)
+                model.head = nn.Linear(768, len(CLASS_NAMES_1))
+        else:
+            # Fallback to ResNet
+            print("Trying ResNet architecture as fallback")
+            import torchvision.models as models
+            model = models.resnet50(pretrained=False)
+            num_ftrs = model.fc.in_features
+            model.fc = nn.Linear(num_ftrs, len(CLASS_NAMES_1))
+        
+        # Load weights with strict=False to allow partial loading
+        model.load_state_dict(state_dict, strict=False)
         
         model = model.to(DEVICE)
         model.eval()
@@ -61,6 +95,8 @@ def load_model1():
         
     except Exception as e:
         print(f"Error loading Model 1: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def predict1(image_tensor):
@@ -101,8 +137,16 @@ def get_gradcam(image_tensor):
         activations.append(output)
         output.register_hook(save_gradient)
     
-    # Register hook on the last convolutional layer (layer4)
-    hook = model.layer4[-1].register_forward_hook(forward_hook)
+    # Register hook based on model architecture
+    if hasattr(model, 'backbone') and hasattr(model.backbone, 'blocks'):
+        # Vision Transformer - hook on last transformer block
+        hook = model.backbone.blocks[-1].register_forward_hook(forward_hook)
+    elif hasattr(model, 'layer4'):
+        # ResNet - hook on last convolutional layer
+        hook = model.layer4[-1].register_forward_hook(forward_hook)
+    else:
+        print("Unsupported architecture for GradCAM")
+        return None
     
     model.eval()
     output = model(image_tensor.to(DEVICE))
@@ -119,14 +163,22 @@ def get_gradcam(image_tensor):
     grad = gradients[0]
     act = activations[0]
     
-    # Global average pooling of gradients
-    weights = grad.mean(dim=(2, 3), keepdim=True)
-    
-    # Weighted combination of activation maps
-    cam = (weights * act).sum(dim=1, keepdim=True)
-    
-    # Apply ReLU
-    cam = torch.clamp(cam, min=0)
+    # Handle different tensor shapes
+    if grad.dim() == 3:  # ViT: [batch, seq_len, hidden_dim]
+        # For ViT, use attention weights
+        weights = grad.mean(dim=-1, keepdim=True)  # [batch, seq_len, 1]
+        cam = (weights * act).sum(dim=-1)  # [batch, seq_len]
+        cam = cam[:, 1:]  # Remove CLS token
+        # Reshape to square (assuming 14x14 patches)
+        size = int(math.sqrt(cam.shape[1]))
+        cam = cam.reshape(1, 1, size, size)
+    elif grad.dim() == 4:  # CNN: [batch, channels, height, width]
+        weights = grad.mean(dim=(2, 3), keepdim=True)
+        cam = (weights * act).sum(dim=1, keepdim=True)
+        cam = torch.clamp(cam, min=0)
+    else:
+        print("Unsupported tensor shape for GradCAM")
+        return None
     
     # Resize to input size
     import torch.nn.functional as F

@@ -20,11 +20,22 @@ def is_valid_skin_image(confidence: float, probs_list: list) -> bool:
     # Check confidence threshold
     if confidence < 60:
         return False
+    
+    # Flatten probs_list if it contains nested structures
+    flat_probs = []
+    for p in probs_list:
+        if isinstance(p, (tuple, list)):
+            flat_probs.extend(p)
+        else:
+            flat_probs.append(p)
+    
     # Check entropy - if model is confused, reject
-    total = sum(probs_list)
-    normalized = [p/total for p in probs_list]
+    total = sum(flat_probs)
+    if total == 0:
+        return False
+    normalized = [p/total for p in flat_probs]
     entropy = -sum(p * math.log(p + 1e-9) for p in normalized)
-    max_entropy = math.log(len(probs_list))
+    max_entropy = math.log(len(flat_probs))
     if entropy / max_entropy > 0.85:
         return False
     return True
@@ -576,21 +587,14 @@ async def login_user(request: LoginRequest):
         raise HTTPException(status_code=401, detail=str(e))
 
 @app.get("/auth/profile/{uid}")
-async def get_user_profile(uid: str):
-    """Get user profile"""
-    if not AUTH_SERVICE_AVAILABLE:
-        raise HTTPException(
-            status_code=503, 
-            detail={"success": False, "message": "Authentication service is not available"}
-        )
-    
+async def get_profile(uid: str):
+    uid = uid.strip('"').strip("'")
     try:
         profile = auth_service.get_user_profile(uid)
-        return profile
+        if not profile:
+            raise HTTPException(404, "User not found")
+        return {"success": True, "user": profile}
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+        raise HTTPException(500, f"Error: {str(e)}")
