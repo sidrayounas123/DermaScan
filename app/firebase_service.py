@@ -57,13 +57,18 @@ def get_scans(user_id, filter_type=None):
             data["id"] = scan.id
             timestamp = data.get("timestamp")
             if timestamp:
-                if hasattr(timestamp, 'tzinfo') and timestamp.tzinfo is None:
-                    timestamp = timestamp.replace(tzinfo=datetime.timezone.utc)
-                data["timestamp"] = timestamp.isoformat()
-                if timestamp >= this_month_start:
-                    this_month += 1
-                if timestamp >= this_week_start:
-                    this_week += 1
+    try:
+        if hasattr(timestamp, 'tzinfo'):
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=datetime.timezone.utc)
+        data["timestamp"] = timestamp.isoformat()
+        if timestamp >= this_month_start:
+            this_month += 1
+        if timestamp >= this_week_start:
+            this_week += 1
+    except Exception as ts_error:
+        print(f"Timestamp error: {ts_error}")
+        data["timestamp"] = str(timestamp)
             is_high_risk = data.get("severity") == "Severe" or data.get("see_doctor") == True
             data["is_high_risk"] = is_high_risk
             total += 1
