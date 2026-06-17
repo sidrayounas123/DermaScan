@@ -1,150 +1,148 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import timm
+import torchvision.models as models
 import os
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# Device configuration
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-class SEBlock(nn.Module):
-    def __init__(self, channel, reduction=16):
-        super(SEBlock, self).__init__()
-        self.squeeze = nn.AdaptiveAvgPool1d(1)
-        self.excitation = nn.Sequential(
-            nn.Linear(channel, channel // reduction, bias=False),
-            nn.GELU(),
-            nn.Linear(channel // reduction, channel, bias=False),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        b, t, c = x.shape
-        s = self.squeeze(x.transpose(1, 2)).squeeze(-1)
-        e = self.excitation(s).unsqueeze(1)
-        return x * e
-
-class DeiTWithSE(nn.Module):
-    def __init__(self, num_classes):
-        super(DeiTWithSE, self).__init__()
-        self.backbone = timm.create_model(
-            "deit_base_patch16_224",
-            pretrained=False,
-            num_classes=0
-        )
-        feature_dim = 768
-        self.se_block = SEBlock(channel=feature_dim, reduction=16)
-        self.classifier = nn.Sequential(
-            nn.Linear(feature_dim, 512),
-            nn.BatchNorm1d(512),
-            nn.GELU(),
-            nn.Dropout(0.3),
-            nn.Linear(512, num_classes)
-        )
-
-    def forward(self, x):
-        features = self.backbone.forward_features(x)
-        features = self.se_block(features)
-        cls_token = features[:, 0, :]
-        out = self.classifier(cls_token)
-        return out
-
-# Global variables
-_model2 = None
+# Class names for Dataset 2 (extended skin diseases)
 CLASS_NAMES_2 = [
-    "Acne",
-    "Eczema", 
-    "Psoriasis",
-    "Rosacea",
-    "Melanoma",
-    "Basal Cell Carcinoma",
-    "Squamous Cell Carcinoma",
     "Actinic Keratosis",
+    "Basal Cell Carcinoma",
+    "Benign Keratosis",
+    "Dermatofibroma",
+    "Melanoma",
+    "Nevus",
+    "Squamous Cell Carcinoma",
+    "Vascular Lesion",
+    "Eczema",
+    "Psoriasis",
     "Seborrheic Keratosis",
-    "Dermatitis",
-    "Vitiligo",
-    "Fungal Infection",
-    "Bacterial Infection",
-    "Allergic Reaction",
-    "Normal Skin"
+    "Tinea Ringworm",
+    "Warts",
+    "Urticaria Hives",
+    "Acne"
 ]
 
-def load_model2(weights_path: str = "weights/model2.pth"):
-    global _model2
-    if _model2 is None:
-        import os
-        print(f"Looking for model2 at: {weights_path}")
-        print(f"Current directory: {os.getcwd()}")
-        print(f"Files in weights/: {os.listdir('weights/') if os.path.exists('weights/') else 'weights folder not found'}")
-        
-        if not os.path.exists(weights_path):
-            print(f"model2.pth NOT FOUND at {weights_path}")
-            return None
-        
-        try:
-            print(f"Loading model2...")
-            _model2 = DeiTWithSE(num_classes=len(CLASS_NAMES_2))
-            _model2.load_state_dict(torch.load(weights_path, map_location=DEVICE))
-            _model2.to(DEVICE)
-            _model2.eval()
-            print("Model 2 loaded successfully!")
-        except Exception as e:
-            print(f"Model 2 load error: {str(e)}")
-            _model2 = None
-            return None
-    return _model2
+# Global model instance
+_model2 = None
 
-def predict2(image_tensor):
-    """
-    Make prediction using Model 2
-    
-    Args:
-        image_tensor: Preprocessed image tensor (should be on correct device)
-        
-    Returns:
-        Tuple: (class_name, confidence_float, all_probs_list) or error dict
-    """
+def load_model2():
+    """Load Model 2 (Dataset 2) - returns None gracefully if weights not found"""
     global _model2
+    if _model2 is not None:
+        return _model2
     
     try:
-        # Check if classes are configured
-        if len(CLASS_NAMES_2) == 0:
-            return {"error": "Model 2 classes not configured yet. Update CLASS_NAMES_2 in model2.py"}
+        current_dir = os.getcwd()
+        weights_path = os.path.join(current_dir, "weights", "model2.pth")
         
-        # Check if model is loaded
-        if _model2 is None:
-            return {"error": "Model 2 not ready. Add model2.pth to weights/ folder"}
+        if not os.path.exists(weights_path):
+            print(f"Model 2 weights not found at {weights_path}")
+            print("Model 2 will be unavailable")
+            return None
         
-        # Ensure model is in eval mode
-        _model2.eval()
+        # Load a ResNet50 model (common for skin disease classification)
+        model = models.resnet50(pretrained=False)
         
-        # Move input to device if needed
-        if image_tensor.device != torch.device(DEVICE):
-            image_tensor = image_tensor.to(DEVICE)
+        # Modify the final layer for our number of classes
+        num_ftrs = model.fc.in_features
+        model.fc = nn.Linear(num_ftrs, len(CLASS_NAMES_2))
         
-        # Add batch dimension if needed
-        if image_tensor.dim() == 3:
-            image_tensor = image_tensor.unsqueeze(0)
+        # Load weights
+        checkpoint = torch.load(weights_path, map_location=DEVICE)
         
-        # Make prediction
+        # Handle different checkpoint formats
+        if 'model_state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['model_state_dict'])
+        elif 'state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['state_dict'])
+        else:
+            model.load_state_dict(checkpoint)
+        
+        model = model.to(DEVICE)
+        model.eval()
+        _model2 = model
+        print("Model 2 loaded successfully")
+        return _model2
+        
+    except Exception as e:
+        print(f"Error loading Model 2: {str(e)}")
+        print("Model 2 will be unavailable")
+        return None
+
+def predict2(image_tensor):
+    """Make prediction using Model 2 - returns error dict if model unavailable"""
+    model = load_model2()
+    if model is None:
+        return {"error": "Model 2 not available yet"}
+    
+    try:
         with torch.no_grad():
-            outputs = _model2(image_tensor)
-            probabilities = F.softmax(outputs, dim=1)
+            image_tensor = image_tensor.to(DEVICE)
+            outputs = model(image_tensor)
+            probabilities = torch.softmax(outputs, dim=1)
             confidence, predicted = torch.max(probabilities, 1)
             
-            # Convert to numpy for easier handling
-            probs_np = probabilities.cpu().numpy()[0]
-            predicted_idx = predicted.item()
-            confidence_float = confidence.item()
+            disease = CLASS_NAMES_2[predicted.item()]
+            confidence_value = confidence.item()
+            all_probs = probabilities[0].cpu().numpy().tolist()
             
-            # Get class name
-            class_name = CLASS_NAMES_2[predicted_idx]
-            
-            # Create list of all probabilities as plain floats
-            all_probs_list = [float(probs_np[i]) for i in range(len(CLASS_NAMES_2))]
-            
-            return (class_name, confidence_float, all_probs_list)
+            return disease, confidence_value, all_probs
             
     except Exception as e:
         return {"error": f"Prediction failed: {str(e)}"}
 
-# Model will be loaded during FastAPI startup, not on import
+def get_gradcam2(image_tensor):
+    """Generate GradCAM heatmap for Model 2"""
+    model = load_model2()
+    if model is None:
+        return None
+    
+    gradients = []
+    activations = []
+    
+    def save_gradient(grad):
+        gradients.append(grad)
+    
+    def forward_hook(module, input, output):
+        activations.append(output)
+        output.register_hook(save_gradient)
+    
+    # Register hook on the last convolutional layer (layer4)
+    hook = model.layer4[-1].register_forward_hook(forward_hook)
+    
+    model.eval()
+    output = model(image_tensor.to(DEVICE))
+    pred_class = output.argmax(dim=1).item()
+    
+    model.zero_grad()
+    output[0, pred_class].backward()
+    
+    hook.remove()
+    
+    if not gradients or not activations:
+        return None
+    
+    grad = gradients[0]
+    act = activations[0]
+    
+    # Global average pooling of gradients
+    weights = grad.mean(dim=(2, 3), keepdim=True)
+    
+    # Weighted combination of activation maps
+    cam = (weights * act).sum(dim=1, keepdim=True)
+    
+    # Apply ReLU
+    cam = torch.clamp(cam, min=0)
+    
+    # Resize to input size
+    import torch.nn.functional as F
+    cam = F.interpolate(cam, size=(224, 224), mode='bilinear', align_corners=False)
+    
+    # Convert to numpy and normalize
+    cam = cam.squeeze().detach().cpu().numpy()
+    cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
+    
+    return cam

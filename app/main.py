@@ -7,10 +7,27 @@ import re
 from typing import Any
 from PIL import Image
 import io
-from app.model1 import load_model1, predict1, CLASS_NAMES_1
-from app.model2 import load_model2, predict2, CLASS_NAMES_2
+import numpy as np
+import base64
+import cv2
+from app.model1 import load_model1, predict1, CLASS_NAMES_1, get_gradcam
+from app.model2 import load_model2, predict2, CLASS_NAMES_2, get_gradcam2
 from app.utils import preprocess_image
 from app.disease_info import DISEASE_INFO
+import math
+
+def is_valid_skin_image(confidence: float, probs_list: list) -> bool:
+    # Check confidence threshold
+    if confidence < 60:
+        return False
+    # Check entropy - if model is confused, reject
+    total = sum(probs_list)
+    normalized = [p/total for p in probs_list]
+    entropy = -sum(p * math.log(p + 1e-9) for p in normalized)
+    max_entropy = math.log(len(probs_list))
+    if entropy / max_entropy > 0.85:
+        return False
+    return True
 
 # Try to import Firebase services, but don't fail if not available
 try:
@@ -168,14 +185,19 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = None):
     
     confidence_percent = round(float(confidence) * 100, 2)
     
-    # Check if confidence is less than 40% for irrelevant image detection
-    if float(confidence) < 0.4:
+    probs_list = [all_probs[i] for i in range(len(CLASS_NAMES_1))]
+    
+    if not is_valid_skin_image(confidence_percent, probs_list):
         return {
             "success": False,
-            "predicted_disease": "Unknown",
-            "message": "Image does not appear to be a skin condition. Please upload a clear skin image.",
-            "confidence_percent": confidence_percent,
-            "is_valid_skin_image": False
+            "is_valid_skin_image": False,
+            "predicted_disease": None,
+            "message": "No skin disease detected. Please upload a clear image of affected skin area.",
+            "confidence_percent": round(confidence_percent, 2),
+            "severity": None,
+            "precautions": None,
+            "initial_treatment": None,
+            "see_doctor": None
         }
     
     info = DISEASE_INFO.get(disease, {
@@ -198,13 +220,13 @@ async def predict_dataset1(file: UploadFile = File(...), user_id: str = None):
     
     return {
         "success": True,
+        "is_valid_skin_image": True,
         "predicted_disease": disease,
         "confidence_percent": confidence_percent,
         "severity": info["severity"],
         "description": info["description"],
         "precautions": info["precautions"],
-        "initial_treatment": info["initial_treatment"],
-        "is_valid_skin_image": True
+        "initial_treatment": info["initial_treatment"]
     }
 
 @app.post("/predict/dataset2")
@@ -232,14 +254,14 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         from app.model2 import _model2, load_model2
         if _model2 is None:
             print("Model 2 not loaded, attempting on-demand loading...")
-            try:
-                load_model2()
-                if _model2 is None:
-                    raise HTTPException(status_code=503, detail="Model 2 failed to load. Please check the weights file and configuration.")
-                print("Model 2 loaded successfully on-demand")
-            except Exception as e:
-                print(f"On-demand Model 2 loading failed: {str(e)}")
-                raise HTTPException(status_code=503, detail=f"Model 2 loading failed: {str(e)}")
+            load_model2()
+            if _model2 is None:
+                print("Model 2 not available - weights file missing")
+                return {
+                    "success": False,
+                    "message": "Dataset 2 model not available yet"
+                }
+            print("Model 2 loaded successfully on-demand")
         
         # Read file with proper error handling
         contents = await file.read()
@@ -300,17 +322,23 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         
         confidence_percent = round(float(confidence) * 100, 2)
         
-        if confidence_percent < 40:
-            print(f"Dataset2 - Low confidence ({confidence_percent:.2f}%) - rejecting as irrelevant image")
+        probs_list = [all_probs[i] for i in range(len(CLASS_NAMES_2))]
+        
+        if not is_valid_skin_image(confidence_percent, probs_list):
+            print(f"Dataset2 - Invalid skin image detected")
             return {
                 "success": False,
-                "predicted_disease": "Unknown",
-                "message": "Image does not appear to be a skin condition. Please upload a clear skin image.",
-                "confidence_percent": confidence_percent,
-                "is_valid_skin_image": False
+                "is_valid_skin_image": False,
+                "predicted_disease": None,
+                "message": "No skin disease detected. Please upload a clear image of affected skin area.",
+                "confidence_percent": round(confidence_percent, 2),
+                "severity": None,
+                "precautions": None,
+                "initial_treatment": None,
+                "see_doctor": None
             }
         
-        print(f"Dataset2 - Confidence acceptable ({confidence_percent:.2f}%) - proceeding with result")
+        print(f"Dataset2 - Valid skin image detected ({confidence_percent:.2f}%) - proceeding with result")
         
         # Get disease information
         disease_key = class_name
@@ -335,19 +363,95 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         # Format standardized response matching dataset1 format
         return {
             "success": True,
+            "is_valid_skin_image": True,
             "predicted_disease": class_name,
             "confidence_percent": confidence_percent,
             "severity": info["severity"],
             "description": info["description"],
             "precautions": info["precautions"],
-            "initial_treatment": info["initial_treatment"],
-            "is_valid_skin_image": True
+            "initial_treatment": info["initial_treatment"]
         }
         
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+@app.post("/gradcam/dataset1")
+async def gradcam_dataset1(file: UploadFile = File(...)):
+    """Generate GradCAM heatmap for Dataset 1 model"""
+    contents = await file.read()
+    if len(contents) == 0:
+        raise HTTPException(400, "Empty file")
+    try:
+        image_tensor = preprocess_image(contents)
+        cam = get_gradcam(image_tensor)
+        if cam is None:
+            raise HTTPException(500, "GradCAM failed")
+        
+        # Create heatmap
+        heatmap = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
+        
+        # Overlay on original image
+        original = Image.open(io.BytesIO(contents)).convert('RGB')
+        original = original.resize((224, 224))
+        original_np = np.array(original)
+        
+        overlay = cv2.addWeighted(original_np, 0.6, heatmap, 0.4, 0)
+        
+        # Convert to base64
+        _, buffer = cv2.imencode('.jpg', overlay)
+        img_base64 = base64.b64encode(buffer).decode('utf-8')
+        
+        return {
+            "success": True,
+            "gradcam_image": f"data:image/jpeg;base64,{img_base64}"
+        }
+    except Exception as e:
+        raise HTTPException(500, f"GradCAM error: {str(e)}")
+
+@app.post("/gradcam/dataset2")
+async def gradcam_dataset2(file: UploadFile = File(...)):
+    """Generate GradCAM heatmap for Dataset 2 model"""
+    contents = await file.read()
+    if len(contents) == 0:
+        raise HTTPException(400, "Empty file")
+    try:
+        # Check if model2 is available
+        from app.model2 import _model2
+        if _model2 is None:
+            load_model2()
+            if _model2 is None:
+                return {
+                    "success": False,
+                    "message": "Dataset 2 model not available yet"
+                }
+        
+        image_tensor = preprocess_image(contents)
+        cam = get_gradcam2(image_tensor)
+        if cam is None:
+            raise HTTPException(500, "GradCAM failed")
+        
+        # Create heatmap
+        heatmap = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
+        
+        # Overlay on original image
+        original = Image.open(io.BytesIO(contents)).convert('RGB')
+        original = original.resize((224, 224))
+        original_np = np.array(original)
+        
+        overlay = cv2.addWeighted(original_np, 0.6, heatmap, 0.4, 0)
+        
+        # Convert to base64
+        _, buffer = cv2.imencode('.jpg', overlay)
+        img_base64 = base64.b64encode(buffer).decode('utf-8')
+        
+        return {
+            "success": True,
+            "gradcam_image": f"data:image/jpeg;base64,{img_base64}"
+        }
+    except Exception as e:
+        raise HTTPException(500, f"GradCAM error: {str(e)}")
 
 @app.get("/scans/{user_id}")
 async def get_user_scans(user_id: str, filter: str = Query(None, description="Filter scans: high_risk, low_risk")):
