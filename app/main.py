@@ -14,6 +14,7 @@ from app.model1 import load_model1, predict1, CLASS_NAMES_1, get_gradcam
 from app.model2 import load_model2, predict2, CLASS_NAMES_2, get_gradcam2
 from app.utils import preprocess_image
 from app.disease_info import DISEASE_INFO
+from app.skin_detector import is_likely_skin_image
 import math
 
 def is_valid_skin_image(confidence: float, probs_list: list) -> bool:

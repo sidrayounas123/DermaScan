@@ -230,3 +230,51 @@ def preprocess_for_skin_detection(image_bytes):
 
 # Initialize skin detector on module import
 load_skin_detector()
+
+# MediaPipe-based skin detection (more accurate)
+try:
+    import mediapipe as mp
+    import cv2
+    
+    mp_selfie_segmentation = mp.solutions.selfie_segmentation
+    _segmenter = mp_selfie_segmentation.SelfieSegmentation(model_selection=1)
+    MEDIAPIPE_AVAILABLE = True
+except Exception as e:
+    print(f"MediaPipe not available: {e}")
+    MEDIAPIPE_AVAILABLE = False
+
+def is_likely_skin_image(image_bytes: bytes, min_skin_percent: float = 15.0) -> bool:
+    if not MEDIAPIPE_AVAILABLE:
+        # Fallback to existing heuristic
+        tensor = preprocess_for_skin_detection(image_bytes)
+        return heuristic_skin_check(tensor)
+    
+    try:
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            return False
+        
+        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        results = _segmenter.process(img_rgb)
+        person_mask = results.segmentation_mask > 0.5
+        
+        img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        lower_skin = np.array([0, 20, 70], dtype=np.uint8)
+        upper_skin = np.array([20, 255, 255], dtype=np.uint8)
+        skin_mask = cv2.inRange(img_hsv, lower_skin, upper_skin)
+        
+        combined_mask = np.logical_or(person_mask, skin_mask > 0)
+        skin_pixels = np.count_nonzero(combined_mask)
+        total_pixels = img.shape[0] * img.shape[1]
+        
+        skin_percentage = (skin_pixels / total_pixels) * 100
+        print(f"MediaPipe skin detection: {skin_percentage:.2f}%")
+        
+        return skin_percentage >= min_skin_percent
+        
+    except Exception as e:
+        print(f"MediaPipe detection error: {e}")
+        tensor = preprocess_for_skin_detection(image_bytes)
+        return heuristic_skin_check(tensor)

@@ -13,3 +13,5 @@ firebase-admin==6.2.0
 requests==2.31.0
 pydantic==2.5.0
 email-validator==2.3.0
+mediapipe
+
