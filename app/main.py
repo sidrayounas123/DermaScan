@@ -277,6 +277,14 @@ async def predict_dataset2(file: UploadFile = File(...), user_id: str = Query(No
         
         # Read file with proper error handling
         contents = await file.read()
+        if not is_likely_skin_image(contents):
+        return {
+            "success": False,
+            "is_valid_skin_image": False,
+            "predicted_disease": None,
+            "message": "This does not appear to be a skin image. Please upload a clear photo of the affected skin area.",
+            "confidence_percent": 0
+        }
         print(f"Received {len(contents)} bytes")
         if len(contents) == 0:
             raise HTTPException(status_code=400, detail="Empty file received")
