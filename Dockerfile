@@ -4,6 +4,45 @@ FROM python:3.10-slim
 # Set working directory
 WORKDIR /app
 
+# Use Python 3.10 slim base image
+FROM python:3.10-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies needed for mediapipe and opencv
+RUN apt-get update && apt-get install -y \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first to leverage Docker cache
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Verify numpy installation
+RUN python -c "import numpy; print(numpy.__version__)"
+
+# Verify mediapipe installation
+RUN python -c "import mediapipe; print('mediapipe OK')"
+
+# Copy the application code
+COPY . .
+
+# Copy weights directory with model files
+COPY weights/ ./weights/
+
+# Expose port 7860 for Hugging Face Spaces
+EXPOSE 7860
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PORT=7860
+
+# Run the FastAPI app using uvicorn
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 
